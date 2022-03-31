@@ -1,144 +1,223 @@
-//"SPDX-License-Identifier: APACHE 2.0"
+// SPDX-License-Identifier: APACHE 2.0
 
 pragma solidity >=0.8.0 <0.9.0;
 /**
  * @dev IOpenSearch is about searching fields to identify addresses of interest.
  */
+import "https://github.com/Block-Star-Logic/open-register/blob/85c0a12e23b69c71a0c256938f6084cfdf651c77/blockchain_ethereum/solidity/V1/interfaces/IOpenRegister.sol";
+import "https://github.com/Block-Star-Logic/open-roles/blob/fc410fe170ac2d608ea53e3760c8691e3c5b550e/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRolesManaged.sol";
+import "https://github.com/Block-Star-Logic/open-roles/blob/fc410fe170ac2d608ea53e3760c8691e3c5b550e/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRoles.sol";
+import "https://github.com/Block-Star-Logic/open-roles/blob/e7813857f186df0043c84f0cca42478584abe09c/blockchain_ethereum/solidity/v2/contracts/core/OpenRolesSecure.sol";
 
-import "https://github.com/Block-Star-Logic/open-libraries/blob/16a705a5421984ca94dc72fff100cb406ac9aa96/blockchain_ethereum/solidity/V1/libraries/LOpenUtilities.sol";
+import "../interfaces/IOpenSearch.sol";
 
-import "./IOpenSearch.sol";
+contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
-contract OpenSearch is IOpenSearch {
-
-    using LOpenUtilities for uint256;
-    using LOpenUtilities for string;
+    string roleManagerCA                = "RESERVED_OPEN_ROLES";
+    IOpenRegister registry;
+    string name = "RESERVED_OPEN_SEARCH"; 
+    uint256 version = 1; 
+    
+    using LOpenUtilities for string; 
+    using LOpenUtilities for address; 
     using LOpenUtilities for address[];
 
-    address [] uniqueAddresses; 
-    mapping(address=>bool) knownByAddress; 
+    string coreRole     = "JOBCRYPT_CORE_ROLE"; 
 
-    string [] uniqueFields; 
+    string barredUserRole = "BARRED_USER_ROLE";
 
-    mapping(string=>mapping(string=>bool)) knownBySTRValueByField; 
-    mapping(string=>mapping(string=>address[])) addressesBySTRValueByField; 
-    mapping(string=>string[]) STRvaluesByField;     
+    string textFieldType = "TEXT_FIELD_TYPE";
+    string numericFieldType = "NUMERIC_FIELD_TYPE";
 
-    mapping(string=>mapping(uint256=>bool)) knownByNUMValueByField; 
-    mapping(string=>mapping(uint256=>address[])) addressesByNUMValueByField; 
-    mapping(string=>uint256[]) NUMvaluesByField; 
+    string [] roleNames = [coreRole]; 
 
-    mapping(string=>mapping(string=>bool)) knownByFieldByType; 
+    mapping(string=>bool) hasDefaultFunctionsByRole;
+    mapping(string=>string[]) defaultFunctionsByRole;
 
-    address roleManager; // @todo add role access
+    mapping(string=>mapping(string=>address[])) addressListByTermByField;
 
-    constructor() {         
+    mapping(string=>uint256[]) numericValuesByField; 
+    mapping(string=>mapping(uint256=>address[])) addressListByNumericValueByField;
+
+    mapping(address=>string[]) fieldByAddress;
+
+    mapping(address=>mapping(string=>string[])) valuesByFieldByAddress; 
+    mapping(address=>mapping(string=>uint256[])) numericValuesByFieldByAddress; 
+
+    mapping(string=>bool) hasTypeByField; 
+    mapping(address=>mapping(string=>bool)) hasFieldByAddress; 
+    mapping(string=>mapping(uint256=>bool)) hasValueByField;
+    mapping(string=>mapping(uint256=>mapping(address=>bool))) hasAddressByNumericValueByField; 
+    mapping(string=>string) fieldTypeByField; 
+
+    constructor(address _registryAddress) {
+        registry = IOpenRegister(_registryAddress);
+        address openRoles_ = registry.getAddress(roleManagerCA);
+        setRoleManager(openRoles_);
+        addConfigurationItem(_registryAddress);
+        addConfigurationItem(openRoles_);
     }
 
-    function getSearchableAddressCount() view external returns (uint256 _addressCount) {
-        return uniqueAddresses.length; 
+    function getName() view external  returns (string memory) {
+        return name; 
     }
 
-    function getSearchableFieldCount() view external returns (uint256 _fieldCount) {
-        return uniqueFields.length; 
+    function getVersion() view external returns (uint256){
+        return version; 
     }
 
-    function searchFields(string memory _term, string[] memory _fields, uint256 _resultLimit) override view external returns(address[] memory _results){
-        _results = new address[](0);
-        for(uint256 x = 0; x < _fields.length; x++){
-            string memory field_ = _fields[x];
-            string [] memory values_ = STRvaluesByField[field_];
-            if(_term.isContained(values_)) {
-                _results = _results.append(addressesBySTRValueByField[field_][_term]);
-                if(_results.length >= _resultLimit)  {
-                    return _results;                 
-                }
-            }   
+    function getDefaultRoles() override view external returns (string [] memory _roles){    
+        return  roleNames; 
+    }
+
+    function hasDefaultFunctions(string memory _role) override view external returns(bool _hasFunctions){
+        return hasDefaultFunctionsByRole[_role];
+    }
+
+    function getDefaultFunctions(string memory _role) override view external returns (string [] memory _functions){
+        return defaultFunctionsByRole[_role];
+    }
+
+    function searchField(string memory _term, string memory _field, uint256 _resultLimit) view external returns(address[] memory _results){
+        require(isSecureBarring(barredUserRole, "searchField"), " user barred - text ");
+        _results = addressListByTermByField[_field][_term];
+        if(_results.length > _resultLimit) {
+            //_results.trim(_resultLimit);
         }
         return _results; 
     }
 
-    function searchFields(uint256 _value, string memory _comparator, string [] memory _fields, uint256 _resultLimit) override view external returns (address[] memory _results){
+    function searchField(uint256 _value, string memory _comparator, string memory _field, uint256 _resultLimit) view external returns (address[] memory _results){
+        require(isSecureBarring(barredUserRole, "searchField"), " user barred - numeric ");
         _results = new address[](0);
-        for(uint256 x = 0; x < _fields.length; x++){
-            string memory field_ = _fields[x];
-            uint256 [] memory values_ = NUMvaluesByField[field_];
-            for(uint256 y = 0; y < values_.length; y++){            
-                uint256 value_ = values_[y];
-                if(compareInternal(_value, value_, _comparator)) {                    
-                    _results = _results.append(addressesByNUMValueByField[field_][value_]);
-                    if(_results.length >= _resultLimit)  {
-                        return _results;                 
-                    }
+        uint256 [] memory values_ = numericValuesByField[_field];
+        for(uint256 x = 0; x < values_.length; x++){
+            uint256 value_ = values_[x];
+            if(_comparator.isEqual("GREATER_THAN")){
+                if(_value < value_){
+                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    _results = _results.append(addresses_);
                 }
-            }   
+            }
+
+            if(_comparator.isEqual("LESS_THAN")){
+                if(_value > value_){
+                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    _results = _results.append(addresses_);
+                }
+            }
+
+            if(_comparator.isEqual("EQUAL_TO")){
+                if(_value == value_){
+                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    _results = _results.append(addresses_);
+                }
+            }
+
+            if(_results.length >= _resultLimit) {
+                break; 
+            }
         }
         return _results; 
     }
 
-    function addSearchableAddress(address _address, string [] memory _fields, string[] memory _values, string [] memory _numericFields, uint256 [] memory _numericValues) override external returns (bool _added){
-        if(!knownByAddress[_address]){
-            uniqueAddresses.push(_address);
-            knownByAddress[_address] = true; 
+    function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added){
+        require(isSecure(coreRole, "addSearchableAddress"),"admin only");
+        if(hasTypeByField[_field]){
+            string memory fieldType = fieldTypeByField[_field];
+            require(fieldType.isEqual(numericFieldType), "Field <-> Type mis-match.");
         }
-        addSearchableSTRValuesInternal(_address, _fields, _values);
-        addSearchableNUMValuesInternal(_address, _numericFields, _numericValues);
+        else { 
+            fieldTypeByField[_field] = numericFieldType; 
+            hasTypeByField[_field] = true; 
+        }
+        fieldByAddress[_address].push(_field);
+        for(uint256 x = 0; x < _values.length; x++){
+            string memory value_  = _values[x];          
+            addressListByTermByField[_field][value_].push(_address); 
+            // clean up            
+            valuesByFieldByAddress[_address][_field] = _values; 
+        }
+        fieldTypeByField[_field] = textFieldType; 
         return true; 
     }
 
-    // ============================================= INTERNAL ======================================================
 
-    function compareInternal(uint256 a, uint256 b, string memory _comparator)  pure internal returns (bool _isComparator){
-        if(_comparator.isEqual("GREATER_THAN") || _comparator.isEqual(">")){
-            return (a > b);
+    function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added){
+        require(isSecure(coreRole, "addSearchableAddress"),"admin only");
+        if(hasTypeByField[_field]){
+            string memory fieldType = fieldTypeByField[_field];
+            require(fieldType.isEqual(numericFieldType), "Field <-> Type mis-match.");
+        }
+        else { 
+            fieldTypeByField[_field] = numericFieldType; 
+             hasTypeByField[_field] = true; 
+        }
+        
+        if(!hasFieldByAddress[_address][_field]){
+            fieldByAddress[_address].push(_field);
+            hasFieldByAddress[_address][_field] = true; 
         }
 
-        if(_comparator.isEqual("LESS_THAN") || _comparator.isEqual("<")){
-            return (a < b);
-        }
-
-        if(_comparator.isEqual("EQUAL_TO") || _comparator.isEqual("==")){
-            return (a == b);
-        }
-        if(_comparator.isEqual("LESS_THAN_OR_EQUAL_TO") || _comparator.isEqual("<=")){
-            return (a <= b);
-        }
-        if(_comparator.isEqual("GREATER_THAN_OR_EQUAL_TO") || _comparator.isEqual(">=")){
-            return (a >= b);
-        }
-        return false; 
-    }
-
-    function addSearchableSTRValuesInternal(address _address, string [] memory _fields, string[] memory _values)  internal returns (bool _added) {
-        for(uint256 x = 0 ;x < _fields.length; x++){
-            string memory field_ = _fields[x];
-            if(!knownByFieldByType["STR"][field_] ){
-                knownByFieldByType["STR"][field_] = true; 
-                uniqueFields.push(field_);
+        for(uint256 x = 0; x < _values.length; x++){
+            uint256 value_  = _values[x];
+            
+            if(!hasValueByField[_field][value_]){
+                numericValuesByField[_field].push(value_);
+                hasValueByField[_field][value_] = true; 
             }
-            string memory value_ = _values[x];
-            knownBySTRValueByField[field_][value_] = true; 
-            addressesBySTRValueByField[field_][value_].push(_address); 
-            STRvaluesByField[field_].push(value_);    
+
+            if(!hasAddressByNumericValueByField[_field][value_][_address]){            
+                addressListByNumericValueByField[_field][value_].push(_address);
+                hasAddressByNumericValueByField[_field][value_][_address] = true; 
+            }
         }        
         return true; 
     }
 
-    function addSearchableNUMValuesInternal(address _address, string [] memory _fields, uint256 [] memory _values)  internal returns (bool _added) {
-        for(uint256 x = 0; x < _fields.length; x++){
-            string memory field_ = _fields[x];
-            if(!knownByFieldByType["NUM"][field_] ){
-                knownByFieldByType["NUM"][field_] = true; 
-                uniqueFields.push(field_);
+    function removeSearchableAddress(address _address) external returns (bool _removed){
+        require(isSecure(coreRole, "removeSearchableAddress"),"admin only");
+        string [] memory fields_ = fieldByAddress[_address];
+        for(uint256 x = 0; x < fields_.length; x++){
+            string memory field_ = fields_[x];
+            string memory fieldType_ = fieldTypeByField[field_]; 
+            if(fieldType_.isEqual(textFieldType)){
+                removeTextSearchableFieldByAddress(_address, field_);
             }
-            uint256 value_ = _values[x];
-            knownByNUMValueByField[field_][value_] = true; 
-            addressesByNUMValueByField[field_][value_].push(_address); 
-            NUMvaluesByField[field_].push(value_); 
+
+            if(fieldType_.isEqual(numericFieldType)){
+                removeNumericSearchableFieldByAddress(_address, field_);
+            }
         }
-         
+        delete fieldByAddress[_address];
         return true; 
-        
     }
+
+    function removeTextSearchableFieldByAddress(address _address, string memory _field) internal returns(bool _removed) {           
+        string [] memory values_ = valuesByFieldByAddress[_address][_field];
+        for( uint256 y = 0; y < values_.length; y++){
+            string memory value_ = values_[y];
+
+            address[] memory addresses_ = addressListByTermByField[_field][value_];
+            addressListByTermByField[_field][value_] = _address.remove(addresses_);        
+        }
+        delete valuesByFieldByAddress[_address][_field];
+        delete hasFieldByAddress[_address][_field]; 
+        return true; 
+    }
+
+    function removeNumericSearchableFieldByAddress(address _address, string memory _field) internal returns (bool _removed){
+        uint256 [] memory values_ = numericValuesByFieldByAddress[_address][_field];
+        for(uint256 x = 0; x < values_.length; x++){
+            uint256 value_ = values_[x];
+            
+            addressListByNumericValueByField[_field][value_] = _address.remove( addressListByNumericValueByField[_field][value_]);
+            delete hasAddressByNumericValueByField[_field][value_][_address];
+        }
+        delete numericValuesByFieldByAddress[_address][_field];
+        delete hasFieldByAddress[_address][_field]; 
+        return true; 
+    }
+
 
 }

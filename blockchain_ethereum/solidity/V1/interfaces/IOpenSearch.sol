@@ -6,10 +6,14 @@ pragma solidity >=0.8.0 <0.9.0;
  */
 interface IOpenSearch {
 
-    function searchFields(string memory _term, string[] memory _fields, uint256 _resultLimit) view external returns(address[] memory _results);
+    function searchField(string memory _term, string memory _field, uint256 _resultLimit) view external returns(address[] memory _results);
 
-    function searchFields(uint256 _value, string memory _comparator, string [] memory _fields, uint256 _resultLimit) view external returns (address[] memory _results);
+    function searchField(uint256 _value, string memory _comparator, string memory _field, uint256 _resultLimit) view external returns (address[] memory _results);
 
-    function addSearchableAddress(address _address, string [] memory _fields, string[] memory _values, string [] memory _numericFields, uint256 [] memory _numericValues) external returns (bool _added);
+    function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added);
+
+    function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added);
+
+    function removeSearchableAddress(address _address) external returns (bool _removed);
 
 }
