@@ -29,7 +29,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     string textFieldType = "TEXT_FIELD_TYPE";
     string numericFieldType = "NUMERIC_FIELD_TYPE";
 
-    string [] roleNames = [coreRole]; 
+    string [] roleNames = [coreRole, barredUserRole]; 
 
     mapping(string=>bool) hasDefaultFunctionsByRole;
     mapping(string=>string[]) defaultFunctionsByRole;
@@ -217,6 +217,15 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         delete numericValuesByFieldByAddress[_address][_field];
         delete hasFieldByAddress[_address][_field]; 
         return true; 
+    }
+
+    function initDefaulFunctionsForRole() internal returns (bool _initiated){
+        hasDefaultFunctionsByRole[coreRole] = true; 
+        hasDefaultFunctionsByRole[barredUserRole] = true; 
+        
+        defaultFunctionsByRole[coreRole].push("addSearchableAddress");
+        defaultFunctionsByRole[coreRole].push("removeSearchableAddress");
+        defaultFunctionsByRole[barredUserRole].push("searchField");
     }
 
 
