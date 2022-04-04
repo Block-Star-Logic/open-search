@@ -13,10 +13,11 @@ import "../interfaces/IOpenSearch.sol";
 
 contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
-    string roleManagerCA                = "RESERVED_OPEN_ROLES";
+    string name                         = "RESERVED_OPEN_SEARCH_CORE"; 
+    uint256 version = 2; 
+
+    string roleManagerCA                = "RESERVED_OPEN_ROLES_CORE";
     IOpenRegister registry;
-    string name = "RESERVED_OPEN_SEARCH"; 
-    uint256 version = 1; 
     
     using LOpenUtilities for string; 
     using LOpenUtilities for address; 
@@ -56,6 +57,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         setRoleManager(openRoles_);
         addConfigurationItem(_registryAddress);
         addConfigurationItem(openRoles_);
+        initDefaulFunctionsForRole();
     }
 
     function getName() view external  returns (string memory) {
@@ -222,7 +224,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     function initDefaulFunctionsForRole() internal returns (bool _initiated){
         hasDefaultFunctionsByRole[coreRole] = true; 
         hasDefaultFunctionsByRole[barredUserRole] = true; 
-        
+
         defaultFunctionsByRole[coreRole].push("addSearchableAddress");
         defaultFunctionsByRole[coreRole].push("removeSearchableAddress");
         defaultFunctionsByRole[barredUserRole].push("searchField");
