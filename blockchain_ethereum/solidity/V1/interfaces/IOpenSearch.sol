@@ -10,6 +10,8 @@ interface IOpenSearch {
 
     function searchField(uint256 _value, string memory _comparator, string memory _field, uint256 _resultLimit) view external returns (address[] memory _results);
 
+    function generalSearch(string memory _term) view external returns (address [] memory _results);
+
     function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added);
 
     function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added);

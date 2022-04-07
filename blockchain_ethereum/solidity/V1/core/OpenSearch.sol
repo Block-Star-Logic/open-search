@@ -14,7 +14,7 @@ import "../interfaces/IOpenSearch.sol";
 contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
     string name                         = "RESERVED_OPEN_SEARCH_CORE"; 
-    uint256 version = 2; 
+    uint256 version = 3; 
 
     string roleManagerCA                = "RESERVED_OPEN_ROLES_CORE";
     IOpenRegister registry;
@@ -27,13 +27,17 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
     string barredUserRole = "BARRED_USER_ROLE";
 
-    string textFieldType = "TEXT_FIELD_TYPE";
+    string textFieldType    = "TEXT_FIELD_TYPE";
     string numericFieldType = "NUMERIC_FIELD_TYPE";
 
     string [] roleNames = [coreRole, barredUserRole]; 
 
     mapping(string=>bool) hasDefaultFunctionsByRole;
     mapping(string=>string[]) defaultFunctionsByRole;
+
+    mapping(string=>bool) knownField; 
+    string [] searchFields; 
+    mapping(string=>string[]) searchTermsBySearchField;
 
     mapping(string=>mapping(string=>address[])) addressListByTermByField;
 
@@ -50,6 +54,10 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     mapping(string=>mapping(uint256=>bool)) hasValueByField;
     mapping(string=>mapping(uint256=>mapping(address=>bool))) hasAddressByNumericValueByField; 
     mapping(string=>string) fieldTypeByField; 
+
+    mapping(string=>bool) isKnownByTerm; 
+    mapping(string=>address[]) addressByKnownTerms;     
+    mapping(address=>string[]) knownTermsByAddress; 
 
     constructor(address _registryAddress) {
         registry = IOpenRegister(_registryAddress);
@@ -78,6 +86,14 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
     function getDefaultFunctions(string memory _role) override view external returns (string [] memory _functions){
         return defaultFunctionsByRole[_role];
+    }
+
+    function getAvailableSearchFields() view external returns (string [] memory _searchFields){
+        return searchFields; 
+    }
+
+    function getSearchTerms(string memory _searchField) view external returns (string [] memory _searchTerms) {
+        return searchTermsBySearchField[_searchField];
     }
 
     function searchField(string memory _term, string memory _field, uint256 _resultLimit) view external returns(address[] memory _results){
@@ -123,16 +139,35 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         return _results; 
     }
 
+    function generalSearch(string memory _term) view external returns(address [] memory _results) {
+        if(isKnownByTerm[_term]) {
+            return addressByKnownTerms[_term];
+        }
+        return new address[](0);
+    }
+
+    function addGeneralSearchTermsForAddress(address _address, string [] memory _terms) external returns (uint256 _termsAddedCount) {
+        require(isSecure(coreRole, "addGeneralSearchTermsForAddress"),"admin only");
+        return addGeneralSearchTermsForAddressInternal(_address, _terms);
+    }
+
     function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added){
         require(isSecure(coreRole, "addSearchableAddress"),"admin only");
         if(hasTypeByField[_field]){
             string memory fieldType = fieldTypeByField[_field];
-            require(fieldType.isEqual(numericFieldType), "Field <-> Type mis-match.");
+            require(fieldType.isEqual(textFieldType), "Field <-> Type mis-match.");
         }
         else { 
-            fieldTypeByField[_field] = numericFieldType; 
+            fieldTypeByField[_field] = textFieldType; 
             hasTypeByField[_field] = true; 
         }
+
+        if(!knownField[_field]) {
+            searchFields.push(_field);
+            knownField[_field] = true;
+        }
+        searchTermsBySearchField[_field] = _values;
+        
         fieldByAddress[_address].push(_field);
         for(uint256 x = 0; x < _values.length; x++){
             string memory value_  = _values[x];          
@@ -141,6 +176,8 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
             valuesByFieldByAddress[_address][_field] = _values; 
         }
         fieldTypeByField[_field] = textFieldType; 
+    
+        addGeneralSearchTermsForAddressInternal(_address, _values);
         return true; 
     }
 
@@ -192,7 +229,19 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
             }
         }
         delete fieldByAddress[_address];
+        removeAddressFromGeneralSearchTerms(_address);
         return true; 
+    }
+//================================= INTERNAL ======================================================
+
+    function addGeneralSearchTermsForAddressInternal(address _address, string [] memory _terms) internal returns (uint256 _termsAddedCount) {
+        for(uint256 x = 0; x < _terms.length; x++){
+            string memory term_ = _terms[x];
+            isKnownByTerm[term_] = true; 
+            addressByKnownTerms[term_].push(_address);     
+            knownTermsByAddress[_address].push(term_); 
+        }
+        return _termsAddedCount;
     }
 
     function removeTextSearchableFieldByAddress(address _address, string memory _field) internal returns(bool _removed) {           
@@ -208,6 +257,17 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         return true; 
     }
 
+    function removeAddressFromGeneralSearchTerms(address _address) internal returns (uint256 _removeCount) {
+        string [] memory terms_ = knownTermsByAddress[_address];
+        for(uint256 x = 0; x < terms_.length; x++) {
+            string memory term_ = terms_[x];
+            addressByKnownTerms[term_] = _address.remove(addressByKnownTerms[term_]);
+            _removeCount++;
+        }
+        delete knownTermsByAddress[_address];
+        return _removeCount; 
+    }
+
     function removeNumericSearchableFieldByAddress(address _address, string memory _field) internal returns (bool _removed){
         uint256 [] memory values_ = numericValuesByFieldByAddress[_address][_field];
         for(uint256 x = 0; x < values_.length; x++){
@@ -221,13 +281,14 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         return true; 
     }
 
-    function initDefaulFunctionsForRole() internal returns (bool _initiated){
+    function initDefaulFunctionsForRole()  internal returns (bool _initiated){
         hasDefaultFunctionsByRole[coreRole] = true; 
         hasDefaultFunctionsByRole[barredUserRole] = true; 
 
         defaultFunctionsByRole[coreRole].push("addSearchableAddress");
         defaultFunctionsByRole[coreRole].push("removeSearchableAddress");
         defaultFunctionsByRole[barredUserRole].push("searchField");
+        return true; 
     }
 
 
