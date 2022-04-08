@@ -14,7 +14,7 @@ import "../interfaces/IOpenSearch.sol";
 contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
     string name                         = "RESERVED_OPEN_SEARCH_CORE"; 
-    uint256 version = 3; 
+    uint256 version                     = 4; 
 
     string roleManagerCA                = "RESERVED_OPEN_ROLES_CORE";
     IOpenRegister registry;

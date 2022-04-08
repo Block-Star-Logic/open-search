@@ -15,6 +15,8 @@ interface IOpenSearch {
     function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added);
 
     function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added);
+    
+    function addGeneralSearchTermsForAddress(address _address, string [] memory _terms) external returns (uint256 _termsAddedCount);
 
     function removeSearchableAddress(address _address) external returns (bool _removed);
 
