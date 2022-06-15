@@ -1,37 +1,40 @@
 // SPDX-License-Identifier: APACHE 2.0
 
-pragma solidity >=0.8.0 <0.9.0;
+pragma solidity ^0.8.14;
 /**
  * @dev IOpenSearch is about searching fields to identify addresses of interest.
  */
 import "https://github.com/Block-Star-Logic/open-register/blob/85c0a12e23b69c71a0c256938f6084cfdf651c77/blockchain_ethereum/solidity/V1/interfaces/IOpenRegister.sol";
-import "https://github.com/Block-Star-Logic/open-roles/blob/fc410fe170ac2d608ea53e3760c8691e3c5b550e/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRolesManaged.sol";
+import "https://github.com/Block-Star-Logic/open-roles/blob/732f4f476d87bece7e53bd0873076771e90da7d5/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRolesManaged.sol";
 import "https://github.com/Block-Star-Logic/open-roles/blob/fc410fe170ac2d608ea53e3760c8691e3c5b550e/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRoles.sol";
-import "https://github.com/Block-Star-Logic/open-roles/blob/e7813857f186df0043c84f0cca42478584abe09c/blockchain_ethereum/solidity/v2/contracts/core/OpenRolesSecure.sol";
+import "https://github.com/Block-Star-Logic/open-roles/blob/732f4f476d87bece7e53bd0873076771e90da7d5/blockchain_ethereum/solidity/v2/contracts/core/OpenRolesSecureCore.sol";
 
 import "../interfaces/IOpenSearch.sol";
 
-contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
+contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOpenSearch {
 
     string name                         = "RESERVED_OPEN_SEARCH_CORE"; 
-    uint256 version                     = 4; 
+    uint256 version                     = 5; 
 
+    string registerCA                   = "RESERVED_OPEN_REGISTER_CORE";
     string roleManagerCA                = "RESERVED_OPEN_ROLES_CORE";
+    
     IOpenRegister registry;
     
     using LOpenUtilities for string; 
     using LOpenUtilities for address; 
     using LOpenUtilities for address[];
 
-    string coreRole     = "JOBCRYPT_CORE_ROLE"; 
-
+    string openAdminRole  = "RESERVED_OPEN_ADMIN_ROLE";
+    string dappCoreRole   = "DAPP_CORE_ROLE"; 
     string barredUserRole = "BARRED_USER_ROLE";
+
+    string [] roleNames = [dappCoreRole, barredUserRole, openAdminRole]; 
 
     string textFieldType    = "TEXT_FIELD_TYPE";
     string numericFieldType = "NUMERIC_FIELD_TYPE";
 
-    string [] roleNames = [coreRole, barredUserRole]; 
-
+    
     mapping(string=>bool) hasDefaultFunctionsByRole;
     mapping(string=>string[]) defaultFunctionsByRole;
 
@@ -59,7 +62,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     mapping(string=>address[]) addressByKnownTerms;     
     mapping(address=>string[]) knownTermsByAddress; 
 
-    constructor(address _registryAddress) {
+    constructor(address _registryAddress, string memory _dappName) OpenRolesSecureCore(_dappName) {
         registry = IOpenRegister(_registryAddress);
         address openRoles_ = registry.getAddress(roleManagerCA);
         setRoleManager(openRoles_);
@@ -147,12 +150,12 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     }
 
     function addGeneralSearchTermsForAddress(address _address, string [] memory _terms) external returns (uint256 _termsAddedCount) {
-        require(isSecure(coreRole, "addGeneralSearchTermsForAddress"),"admin only");
+        require(isSecure(dappCoreRole, "addGeneralSearchTermsForAddress"),"admin only");
         return addGeneralSearchTermsForAddressInternal(_address, _terms);
     }
 
     function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added){
-        require(isSecure(coreRole, "addSearchableAddress"),"admin only");
+        require(isSecure(dappCoreRole, "addSearchableAddress"),"admin only");
         if(hasTypeByField[_field]){
             string memory fieldType = fieldTypeByField[_field];
             require(fieldType.isEqual(textFieldType), "Field <-> Type mis-match.");
@@ -183,7 +186,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
 
 
     function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added){
-        require(isSecure(coreRole, "addSearchableAddress"),"admin only");
+        require(isSecure(dappCoreRole, "addSearchableAddress"),"admin only");
         if(hasTypeByField[_field]){
             string memory fieldType = fieldTypeByField[_field];
             require(fieldType.isEqual(numericFieldType), "Field <-> Type mis-match.");
@@ -215,7 +218,7 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     }
 
     function removeSearchableAddress(address _address) external returns (bool _removed){
-        require(isSecure(coreRole, "removeSearchableAddress"),"admin only");
+        require(isSecure(dappCoreRole, "removeSearchableAddress"),"admin only");
         string [] memory fields_ = fieldByAddress[_address];
         for(uint256 x = 0; x < fields_.length; x++){
             string memory field_ = fields_[x];
@@ -230,6 +233,16 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
         }
         delete fieldByAddress[_address];
         removeAddressFromGeneralSearchTerms(_address);
+        return true; 
+    }
+
+    function notifyChangeOfAddress() external returns (bool _recieved){
+        require(isSecure(openAdminRole, "notifyChangeOfAddress")," admin only ");    
+        registry                = IOpenRegister(registry.getAddress(registerCA)); // make sure this is NOT a zero address               
+        roleManager             = IOpenRoles(registry.getAddress(roleManagerCA));    
+        addConfigurationItem(address(registry));   
+        addConfigurationItem(address(roleManager));         
+        
         return true; 
     }
 //================================= INTERNAL ======================================================
@@ -282,12 +295,15 @@ contract OpenSearch is OpenRolesSecure, IOpenRolesManaged, IOpenSearch {
     }
 
     function initDefaulFunctionsForRole()  internal returns (bool _initiated){
-        hasDefaultFunctionsByRole[coreRole] = true; 
-        hasDefaultFunctionsByRole[barredUserRole] = true; 
-
-        defaultFunctionsByRole[coreRole].push("addSearchableAddress");
-        defaultFunctionsByRole[coreRole].push("removeSearchableAddress");
+        hasDefaultFunctionsByRole[dappCoreRole] = true; 
+        defaultFunctionsByRole[dappCoreRole].push("addSearchableAddress");
+        defaultFunctionsByRole[dappCoreRole].push("removeSearchableAddress");
+        
+        hasDefaultFunctionsByRole[barredUserRole] = true;
         defaultFunctionsByRole[barredUserRole].push("searchField");
+        
+        hasDefaultFunctionsByRole[openAdminRole] = true;
+        defaultFunctionsByRole[openAdminRole].push("notifyChangeOfAddress");
         return true; 
     }
 
