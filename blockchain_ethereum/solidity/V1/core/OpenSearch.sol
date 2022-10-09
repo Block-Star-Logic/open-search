@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: APACHE 2.0
 
-pragma solidity ^0.8.14;
+pragma solidity ^0.8.15;
 /**
  * @dev IOpenSearch is about searching fields to identify addresses of interest.
  */
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Strings.sol";
+
 import "https://github.com/Block-Star-Logic/open-register/blob/85c0a12e23b69c71a0c256938f6084cfdf651c77/blockchain_ethereum/solidity/V1/interfaces/IOpenRegister.sol";
+
 import "https://github.com/Block-Star-Logic/open-roles/blob/732f4f476d87bece7e53bd0873076771e90da7d5/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRolesManaged.sol";
+
 import "https://github.com/Block-Star-Logic/open-roles/blob/fc410fe170ac2d608ea53e3760c8691e3c5b550e/blockchain_ethereum/solidity/v2/contracts/interfaces/IOpenRoles.sol";
+
 import "https://github.com/Block-Star-Logic/open-roles/blob/732f4f476d87bece7e53bd0873076771e90da7d5/blockchain_ethereum/solidity/v2/contracts/core/OpenRolesSecureCore.sol";
+
 
 import "../interfaces/IOpenSearch.sol";
 
 contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOpenSearch {
 
     string name                         = "RESERVED_OPEN_SEARCH_CORE"; 
-    uint256 version                     = 5; 
+    uint256 version                     = 15; 
 
     string registerCA                   = "RESERVED_OPEN_REGISTER_CORE";
     string roleManagerCA                = "RESERVED_OPEN_ROLES_CORE";
@@ -22,8 +29,10 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
     IOpenRegister registry;
     
     using LOpenUtilities for string; 
+    using LOpenUtilities for string[];
     using LOpenUtilities for address; 
     using LOpenUtilities for address[];
+    using Strings        for uint256; 
 
     string openAdminRole  = "RESERVED_OPEN_ADMIN_ROLE";
     string dappCoreRole   = "DAPP_CORE_ROLE"; 
@@ -38,29 +47,34 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
     mapping(string=>bool) hasDefaultFunctionsByRole;
     mapping(string=>string[]) defaultFunctionsByRole;
 
-    mapping(string=>bool) knownField; 
+    // field key 
     string [] searchFields; 
-    mapping(string=>string[]) searchTermsBySearchField;
-
-    mapping(string=>mapping(string=>address[])) addressListByTermByField;
-
-    mapping(string=>uint256[]) numericValuesByField; 
-    mapping(string=>mapping(uint256=>address[])) addressListByNumericValueByField;
-
-    mapping(address=>string[]) fieldByAddress;
-
-    mapping(address=>mapping(string=>string[])) valuesByFieldByAddress; 
-    mapping(address=>mapping(string=>uint256[])) numericValuesByFieldByAddress; 
-
+    mapping(string=>bool) knownField;     
     mapping(string=>bool) hasTypeByField; 
-    mapping(address=>mapping(string=>bool)) hasFieldByAddress; 
-    mapping(string=>mapping(uint256=>bool)) hasValueByField;
-    mapping(string=>mapping(uint256=>mapping(address=>bool))) hasAddressByNumericValueByField; 
     mapping(string=>string) fieldTypeByField; 
+    
+        // text values
+    mapping(string=>string[]) valuesBySearchField;
+    mapping(string=>mapping(string=>address[])) addressesByValueByField;
 
-    mapping(string=>bool) isKnownByTerm; 
-    mapping(string=>address[]) addressByKnownTerms;     
-    mapping(address=>string[]) knownTermsByAddress; 
+        // numeric values
+    mapping(string=>uint256[]) numericValuesByField; 
+    mapping(string=>mapping(uint256=>bool)) hasValueByNumericValueByField;
+    mapping(string=>mapping(uint256=>address[])) addressesByNumericValueByField;
+    mapping(string=>mapping(uint256=>mapping(address=>bool))) hasAddressByNumericValueByField; 
+
+    // address key
+    mapping(address=>bool) hasAddress; 
+    mapping(address=>mapping(string=>bool)) hasFieldByAddress; 
+    mapping(address=>string[]) fieldsByAddress;
+    mapping(address=>string[]) valuesByAddress; 
+    mapping(address=>mapping(string=>string[])) valuesByFieldByAddress; 
+    mapping(address=>mapping(string=>uint256[])) numericValuesByFieldByAddress;     
+
+    // value key 
+    mapping(string=>bool) isKnownValue; 
+    mapping(string=>address[]) addressesByValue;     
+    
 
     constructor(address _registryAddress, string memory _dappName) OpenRolesSecureCore(_dappName) {
         registry = IOpenRegister(_registryAddress);
@@ -96,14 +110,18 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
     }
 
     function getSearchTerms(string memory _searchField) view external returns (string [] memory _searchTerms) {
-        return searchTermsBySearchField[_searchField];
+        return valuesBySearchField[_searchField];
     }
 
-    function searchField(string memory _term, string memory _field, uint256 _resultLimit) view external returns(address[] memory _results){
+    function searchField(string memory _value, string memory _field, uint256 _resultLimit) view external returns(address[] memory _results){
         require(isSecureBarring(barredUserRole, "searchField"), " user barred - text ");
-        _results = addressListByTermByField[_field][_term];
+        _results = addressesByValueByField[_field][_value];
         if(_results.length > _resultLimit) {
-            //_results.trim(_resultLimit);
+            address [] memory z = new address[](_resultLimit);
+            for(uint256 x = 0; x < _resultLimit; x++){
+                z[x] = _results[x];
+            }
+            return z; 
         }
         return _results; 
     }
@@ -116,21 +134,21 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
             uint256 value_ = values_[x];
             if(_comparator.isEqual("GREATER_THAN")){
                 if(_value < value_){
-                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    address [] memory addresses_ = addressesByNumericValueByField[_field][value_];
                     _results = _results.append(addresses_);
                 }
             }
 
             if(_comparator.isEqual("LESS_THAN")){
                 if(_value > value_){
-                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    address [] memory addresses_ = addressesByNumericValueByField[_field][value_];
                     _results = _results.append(addresses_);
                 }
             }
 
             if(_comparator.isEqual("EQUAL_TO")){
                 if(_value == value_){
-                    address [] memory addresses_ = addressListByNumericValueByField[_field][value_];
+                    address [] memory addresses_ = addressesByNumericValueByField[_field][value_];
                     _results = _results.append(addresses_);
                 }
             }
@@ -142,16 +160,18 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
         return _results; 
     }
 
-    function generalSearch(string memory _term) view external returns(address [] memory _results) {
-        if(isKnownByTerm[_term]) {
-            return addressByKnownTerms[_term];
+    function generalSearch(string memory _value) view external returns(address [] memory _results) {
+        if(isKnownValue[_value]) {
+            return addressesByValue[_value];
         }
         return new address[](0);
     }
 
-    function addGeneralSearchTermsForAddress(address _address, string [] memory _terms) external returns (uint256 _termsAddedCount) {
+    function addGeneralSearchTermsForAddress(address _address, string [] memory _values) external returns (uint256 _termsAddedCount) {
         require(isSecure(dappCoreRole, "addGeneralSearchTermsForAddress"),"admin only");
-        return addGeneralSearchTermsForAddressInternal(_address, _terms);
+        _termsAddedCount = addGeneralSearchTermsForAddressInternal(_address, _values);
+        hasAddress[_address] = true; 
+        return _termsAddedCount;
     }
 
     function addSearchableAddress(address _address, string memory _field, string[] memory _values) external returns (bool _added){
@@ -169,24 +189,35 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
             searchFields.push(_field);
             knownField[_field] = true;
         }
-        searchTermsBySearchField[_field] = _values;
+                
+        if(!hasFieldByAddress[_address][_field]){
+            fieldsByAddress[_address].push(_field);
+            hasFieldByAddress[_address][_field] = true; 
+        }
         
-        fieldByAddress[_address].push(_field);
+        valuesBySearchField[_field] = valuesBySearchField[_field].append(_values);
+
+        // clean up only           
+        valuesByFieldByAddress[_address][_field] = _values;
+
         for(uint256 x = 0; x < _values.length; x++){
             string memory value_  = _values[x];          
-            addressListByTermByField[_field][value_].push(_address); 
-            // clean up            
-            valuesByFieldByAddress[_address][_field] = _values; 
-        }
-        fieldTypeByField[_field] = textFieldType; 
-    
+            addressesByValueByField[_field][value_].push(_address);                          
+        }        
+
         addGeneralSearchTermsForAddressInternal(_address, _values);
+        hasAddress[_address] = true; 
         return true; 
     }
 
 
     function addSearchableAddress(address _address, string memory _field, uint256 [] memory _values) external returns (bool _added){
         require(isSecure(dappCoreRole, "addSearchableAddress"),"admin only");
+        if(!knownField[_field]) {
+            searchFields.push(_field);
+            knownField[_field] = true;
+        }
+        
         if(hasTypeByField[_field]){
             string memory fieldType = fieldTypeByField[_field];
             require(fieldType.isEqual(numericFieldType), "Field <-> Type mis-match.");
@@ -195,31 +226,44 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
             fieldTypeByField[_field] = numericFieldType; 
              hasTypeByField[_field] = true; 
         }
-        
+
         if(!hasFieldByAddress[_address][_field]){
-            fieldByAddress[_address].push(_field);
+            fieldsByAddress[_address].push(_field);
             hasFieldByAddress[_address][_field] = true; 
         }
+        
+        string [] memory _strValues = toString(_values); 
+        valuesBySearchField[_field] = valuesBySearchField[_field].append(_strValues);
 
+        // clean up only
+        numericValuesByFieldByAddress[_address][_field] = _values; 
         for(uint256 x = 0; x < _values.length; x++){
             uint256 value_  = _values[x];
             
-            if(!hasValueByField[_field][value_]){
+            if(!hasValueByNumericValueByField[_field][value_]){
                 numericValuesByField[_field].push(value_);
-                hasValueByField[_field][value_] = true; 
+                hasValueByNumericValueByField[_field][value_] = true; 
             }
 
             if(!hasAddressByNumericValueByField[_field][value_][_address]){            
-                addressListByNumericValueByField[_field][value_].push(_address);
+                addressesByNumericValueByField[_field][value_].push(_address);
                 hasAddressByNumericValueByField[_field][value_][_address] = true; 
             }
-        }        
+        }   
+        addGeneralSearchTermsForAddressInternal(_address, _strValues);
+        hasAddress[_address] = true; 
         return true; 
     }
 
+    
+    
     function removeSearchableAddress(address _address) external returns (bool _removed){
         require(isSecure(dappCoreRole, "removeSearchableAddress"),"admin only");
-        string [] memory fields_ = fieldByAddress[_address];
+        if(!hasAddress[_address]){
+            return false; 
+        }
+
+        string [] memory fields_ = fieldsByAddress[_address];        
         for(uint256 x = 0; x < fields_.length; x++){
             string memory field_ = fields_[x];
             string memory fieldType_ = fieldTypeByField[field_]; 
@@ -231,9 +275,10 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
                 removeNumericSearchableFieldByAddress(_address, field_);
             }
         }
-        delete fieldByAddress[_address];
+    
+        delete fieldsByAddress[_address];
         removeAddressFromGeneralSearchTerms(_address);
-        return true; 
+        return true;  
     }
 
     function notifyChangeOfAddress() external returns (bool _recieved){
@@ -245,52 +290,70 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
         
         return true; 
     }
-//================================= INTERNAL ======================================================
+    
+    //================================= INTERNAL ======================================================
 
-    function addGeneralSearchTermsForAddressInternal(address _address, string [] memory _terms) internal returns (uint256 _termsAddedCount) {
-        for(uint256 x = 0; x < _terms.length; x++){
-            string memory term_ = _terms[x];
-            isKnownByTerm[term_] = true; 
-            addressByKnownTerms[term_].push(_address);     
-            knownTermsByAddress[_address].push(term_); 
+    function toString(uint256 [] memory n_)  pure internal returns (string [] memory _str){
+        _str = new string[](n_.length);
+        for(uint256 x = 0; x < n_.length; x++) {
+            _str[x] = n_[x].toString(); 
+        }
+        return _str; 
+    }
+
+    function addGeneralSearchTermsForAddressInternal(address _address, string [] memory _values) internal returns (uint256 _termsAddedCount) {
+        for(uint256 x = 0; x < _values.length; x++){
+            string memory value_ = _values[x];
+            isKnownValue[value_] = true; 
+            addressesByValue[value_].push(_address);     
+            valuesByAddress[_address].push(value_); 
         }
         return _termsAddedCount;
     }
 
-    function removeTextSearchableFieldByAddress(address _address, string memory _field) internal returns(bool _removed) {           
+    function removeTextSearchableFieldByAddress(address _address, string memory _field) internal returns(bool _removed) {                           
         string [] memory values_ = valuesByFieldByAddress[_address][_field];
         for( uint256 y = 0; y < values_.length; y++){
             string memory value_ = values_[y];
-
-            address[] memory addresses_ = addressListByTermByField[_field][value_];
-            addressListByTermByField[_field][value_] = _address.remove(addresses_);        
+            address[] memory addresses_ = addressesByValueByField[_field][value_];
+            addressesByValueByField[_field][value_] = _address.remove(addresses_);        
+            string [] memory fields_ = fieldsByAddress[_address];
+            fieldsByAddress[_address] = _field.remove(fields_);
         }
+        removeAddressFromGeneralSearchTerms(_address);
         delete valuesByFieldByAddress[_address][_field];
         delete hasFieldByAddress[_address][_field]; 
         return true; 
     }
 
     function removeAddressFromGeneralSearchTerms(address _address) internal returns (uint256 _removeCount) {
-        string [] memory terms_ = knownTermsByAddress[_address];
-        for(uint256 x = 0; x < terms_.length; x++) {
-            string memory term_ = terms_[x];
-            addressByKnownTerms[term_] = _address.remove(addressByKnownTerms[term_]);
+        string [] memory values_ = valuesByAddress[_address];
+        for(uint256 x = 0; x < values_.length; x++) {
+            string memory value_ = values_[x];
+            addressesByValue[value_] = _address.remove(addressesByValue[value_]);
             _removeCount++;
         }
-        delete knownTermsByAddress[_address];
+        delete valuesByAddress[_address];
         return _removeCount; 
     }
 
     function removeNumericSearchableFieldByAddress(address _address, string memory _field) internal returns (bool _removed){
         uint256 [] memory values_ = numericValuesByFieldByAddress[_address][_field];
         for(uint256 x = 0; x < values_.length; x++){
-            uint256 value_ = values_[x];
+            uint256 value_ = values_[x];            
+            address [] memory v_ = addressesByNumericValueByField[_field][value_];            
             
-            addressListByNumericValueByField[_field][value_] = _address.remove( addressListByNumericValueByField[_field][value_]);
+            addressesByNumericValueByField[_field][value_] = _address.remove(v_);
+            
             delete hasAddressByNumericValueByField[_field][value_][_address];
         }
+        removeAddressFromGeneralSearchTerms(_address);
+        string [] memory fields_ = fieldsByAddress[_address];
+        fieldsByAddress[_address] = _field.remove(fields_);
+
         delete numericValuesByFieldByAddress[_address][_field];
         delete hasFieldByAddress[_address][_field]; 
+        
         return true; 
     }
 
@@ -298,6 +361,7 @@ contract OpenSearch is OpenRolesSecureCore, IOpenRolesManaged, IOpenVersion, IOp
         hasDefaultFunctionsByRole[dappCoreRole] = true; 
         defaultFunctionsByRole[dappCoreRole].push("addSearchableAddress");
         defaultFunctionsByRole[dappCoreRole].push("removeSearchableAddress");
+        defaultFunctionsByRole[dappCoreRole].push("addGeneralSearchTermsForAddress");
         
         hasDefaultFunctionsByRole[barredUserRole] = true;
         defaultFunctionsByRole[barredUserRole].push("searchField");
